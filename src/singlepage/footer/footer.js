@@ -2,115 +2,179 @@ import React, { useMemo, useState, useEffect, useRef } from "react";
 import "./footer.css";
 import { BsStarFill, BsStarHalf } from "react-icons/bs";
 import { prepareWithSegments, walkLineRanges, layoutWithLines } from "@chenglou/pretext";
-import { motion, useMotionValue, useSpring } from "framer-motion";
+const CHAR_REPEL_RADIUS = 94;
+const CHAR_REPEL_STRENGTH = 20;
 
-const RepellingChar = ({ char, xOffset, yOffset, mouseX, mouseY }) => {
-  const dx = useMotionValue(0);
-  const dy = useMotionValue(0);
-  const springX = useSpring(dx, { stiffness: 300, damping: 20 });
-  const springY = useSpring(dy, { stiffness: 300, damping: 20 });
+function useElementWidth(ref, fallbackWidth) {
+  const [width, setWidth] = useState(fallbackWidth);
 
   useEffect(() => {
-    if (mouseX === null || mouseY === null) {
-      dx.set(0);
-      dy.set(0);
-      return;
-    }
-    const distX = mouseX - xOffset;
-    const distY = mouseY - yOffset;
-    const distance = Math.sqrt(distX * distX + distY * distY);
-    const maxDist = 100;
-    
-    if (distance < maxDist && distance > 0) {
-      const force = (maxDist - distance) / distance;
-      dx.set(-distX * force * 0.8);
-      dy.set(-distY * force * 0.8);
-    } else {
-      dx.set(0);
-      dy.set(0);
-    }
-  }, [mouseX, mouseY, xOffset, yOffset]);
+    if (!ref.current) return undefined;
 
-  return (
-    <motion.span style={{ x: springX, y: springY, display: "inline-block" }}>
-      {char === " " ? "\u00A0" : char}
-    </motion.span>
-  );
-};
+    const node = ref.current;
+    const update = () => {
+      const next = node.clientWidth;
+      if (next > 0) setWidth(next);
+    };
 
-const BalancedText = ({ text, font, maxWidth, lineHeight }) => {
-  const [mousePos, setMousePos] = useState({ x: null, y: null });
-  const containerRef = useRef(null);
+    update();
 
-  const { lines, width, height } = useMemo(() => {
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return width;
+}
+
+function getRepelOffset(glyph, pointer) {
+  if (!pointer.active) return { x: 0, y: 0 };
+
+  const dx = glyph.cx - pointer.x;
+  const dy = glyph.cy - pointer.y;
+  const distance = Math.hypot(dx, dy);
+
+  if (distance >= CHAR_REPEL_RADIUS || distance === 0) return { x: 0, y: 0 };
+
+  const intensity = ((CHAR_REPEL_RADIUS - distance) / CHAR_REPEL_RADIUS) ** 2;
+  const push = intensity * CHAR_REPEL_STRENGTH;
+
+  return {
+    x: (dx / distance) * push,
+    y: (dy / distance) * push,
+  };
+}
+
+function InteractiveSpreadText({ text, font, lineHeight }) {
+  const hostRef = useRef(null);
+  const hostWidth = useElementWidth(hostRef, 280);
+  const [pointer, setPointer] = useState({ active: false, x: 0, y: 0 });
+
+  const { glyphs, renderWidth, renderHeight } = useMemo(() => {
     try {
       const prepared = prepareWithSegments(text, font);
-      let bestWidth = 0;
-      walkLineRanges(prepared, maxWidth, (line) => {
-        if (line.width > bestWidth) bestWidth = line.width;
-      });
-      const layout = layoutWithLines(prepared, Math.ceil(bestWidth), lineHeight);
-      return { lines: layout.lines, height: layout.height, width: Math.ceil(bestWidth) };
-    } catch (e) {
-      return { lines: [{ text }], height: lineHeight, width: "auto" };
-    }
-  }, [text, font, maxWidth, lineHeight]);
+      let tightWidth = 0;
 
-  const handleMouseMove = (e) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      walkLineRanges(prepared, Math.max(hostWidth, 120), line => {
+        if (line.width > tightWidth) tightWidth = line.width;
+      });
+
+      const wrappedWidth = Math.max(1, Math.ceil(tightWidth));
+      const lineLayout = layoutWithLines(prepared, wrappedWidth, lineHeight);
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        return {
+          glyphs: [],
+          renderWidth: wrappedWidth,
+          renderHeight: lineHeight,
+        };
+      }
+
+      context.font = font;
+      const nextGlyphs = [];
+
+      lineLayout.lines.forEach((line, lineIndex) => {
+        let cursorX = 0;
+        Array.from(line.text).forEach((char, charIndex) => {
+          const width = context.measureText(char).width;
+          const safeWidth = width > 0 ? width : context.measureText(" ").width;
+
+          nextGlyphs.push({
+            id: `${lineIndex}-${charIndex}`,
+            char,
+            left: cursorX,
+            top: lineIndex * lineHeight,
+            width: safeWidth,
+            cx: cursorX + safeWidth / 2,
+            cy: lineIndex * lineHeight + lineHeight / 2,
+          });
+
+          cursorX += safeWidth;
+        });
+      });
+
+      return {
+        glyphs: nextGlyphs,
+        renderWidth: wrappedWidth,
+        renderHeight: Math.max(lineHeight, lineLayout.height),
+      };
+    } catch (error) {
+      return {
+        glyphs: [
+          {
+            id: "fallback-0",
+            char: text,
+            left: 0,
+            top: 0,
+            width: hostWidth,
+            cx: hostWidth / 2,
+            cy: lineHeight / 2,
+          },
+        ],
+        renderWidth: hostWidth,
+        renderHeight: lineHeight,
+      };
+    }
+  }, [font, hostWidth, lineHeight, text]);
+
+  const onMouseMove = event => {
+    if (!hostRef.current) return;
+    const rect = hostRef.current.getBoundingClientRect();
+    setPointer({
+      active: true,
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
   };
 
-  const handleMouseLeave = () => {
-    setMousePos({ x: null, y: null });
+  const onMouseLeave = () => {
+    setPointer({ active: false, x: 0, y: 0 });
   };
 
   return (
     <div
-      ref={containerRef}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{ width, height, position: "relative", cursor: "default" }}
+      ref={hostRef}
+      className="spreadText"
+      style={{ minHeight: `${renderHeight}px` }}
+      onMouseMove={onMouseMove}
+      onMouseLeave={onMouseLeave}
     >
-      {lines.map((l, i) => {
-        const chars = l.text.split("");
-        // Approximation of x offset for each char in a system font
-        const estimateCharWidth = l.width / Math.max(chars.length, 1);
-        return (
-          <div key={i} style={{ position: "absolute", top: i * lineHeight, left: 0, whiteSpace: "nowrap" }}>
-            {chars.map((c, j) => (
-              <RepellingChar
-                key={j}
-                char={c}
-                xOffset={j * estimateCharWidth + estimateCharWidth/2}
-                yOffset={i * lineHeight + lineHeight/2}
-                mouseX={mousePos.x}
-                mouseY={mousePos.y}
-              />
-            ))}
-          </div>
-        );
-      })}
+      <div className="spreadText__stage" style={{ width: `${renderWidth}px`, height: `${renderHeight}px` }}>
+        {glyphs.map(glyph => {
+          const offset = getRepelOffset(glyph, pointer);
+          return (
+            <span
+              key={glyph.id}
+              className="spreadText__glyph"
+              style={{
+                left: `${glyph.left}px`,
+                top: `${glyph.top}px`,
+                width: `${glyph.width}px`,
+                height: `${lineHeight}px`,
+                lineHeight: `${lineHeight}px`,
+                transform: `translate(${offset.x}px, ${offset.y}px)`,
+                transition: pointer.active
+                  ? "transform 70ms linear"
+                  : "transform 460ms cubic-bezier(0.2, 0.88, 0.25, 1)",
+              }}
+            >
+              {glyph.char === " " ? "\u00A0" : glyph.char}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
-};
+}
 
 const Footer = () => {
-  const [containerWidth, setContainerWidth] = useState(300);
-
-  useEffect(() => {
-    const handleResize = () => setContainerWidth(Math.min(window.innerWidth - 40, 400));
-    window.addEventListener("resize", handleResize);
-    handleResize();
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
   return (
-    <div className="Footer">
-      <div className="left">
-        <div className="review">Rating</div>
-        <div className="star">
+    <div className="footerPanel">
+      <div className="footerPanel__block">
+        <div className="footerPanel__label">Rating</div>
+        <div className="footerPanel__starRow">
           <BsStarFill />
           <BsStarFill />
           <BsStarFill />
@@ -118,20 +182,25 @@ const Footer = () => {
           <BsStarHalf />
         </div>
       </div>
-      <div className="mid">
-        <div className="genre">Genre</div>
-        <div className="element">
-          <BalancedText 
-            text="Drama, Comedy, Sports, School" 
-            font='16px system-ui, -apple-system, sans-serif'
-            maxWidth={containerWidth / 3}
-            lineHeight={24}
+      <div className="footerPanel__block footerPanel__block--wide">
+        <div className="footerPanel__label">Genre</div>
+        <div className="footerPanel__value">
+          <InteractiveSpreadText
+            text="Drama, Comedy, Sports, School"
+            font='600 18px "Trebuchet MS", "Segoe UI", Tahoma, sans-serif'
+            lineHeight={26}
           />
         </div>
       </div>
-      <div className="right">
-        <div className="heading">Studio</div>
-        <div className="element">Production I.G</div>
+      <div className="footerPanel__block">
+        <div className="footerPanel__label">Studio</div>
+        <div className="footerPanel__value">
+          <InteractiveSpreadText
+            text="Production I.G"
+            font='600 18px "Trebuchet MS", "Segoe UI", Tahoma, sans-serif'
+            lineHeight={26}
+          />
+        </div>
       </div>
     </div>
   );

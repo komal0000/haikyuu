@@ -1,4 +1,3 @@
-import logo from "./logo.svg";
 import "./css/index.css";
 import "./App.css";
 import Head from "./singlepage/head/head";

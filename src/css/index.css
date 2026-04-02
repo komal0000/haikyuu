@@ -13,13 +13,4 @@ body .container {
   background-image: url("./../assets/image/main.jpg");
   position: relative;
 }
-body .container .Footer {
-  position: absolute;
-  bottom: 4px;
-  display: flex;
-  font-weight: 600;
-  gap: 100px;
-}
-body .container .Footer .star {
-  display: flex;
-}/*# sourceMappingURL=index.css.map */
+/*# sourceMappingURL=index.css.map */

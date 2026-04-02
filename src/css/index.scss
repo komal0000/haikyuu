@@ -11,15 +11,5 @@ body {
     background-size: 100%;
     background-image: url("./../assets/image/main.jpg");
     position: relative;
-    .Footer {
-      position: absolute;
-      bottom: 4px;
-      display: flex;
-      font-weight: 600;
-      gap: 100px;
-      .star {
-        display: flex;
-      }
-    }
   }
 }
