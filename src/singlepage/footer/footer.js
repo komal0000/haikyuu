@@ -1,9 +1,47 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import "./footer.css";
 import { BsStarFill, BsStarHalf } from "react-icons/bs";
 import { prepareWithSegments, walkLineRanges, layoutWithLines } from "@chenglou/pretext";
+import { motion, useMotionValue, useSpring } from "framer-motion";
+
+const RepellingChar = ({ char, xOffset, yOffset, mouseX, mouseY }) => {
+  const dx = useMotionValue(0);
+  const dy = useMotionValue(0);
+  const springX = useSpring(dx, { stiffness: 300, damping: 20 });
+  const springY = useSpring(dy, { stiffness: 300, damping: 20 });
+
+  useEffect(() => {
+    if (mouseX === null || mouseY === null) {
+      dx.set(0);
+      dy.set(0);
+      return;
+    }
+    const distX = mouseX - xOffset;
+    const distY = mouseY - yOffset;
+    const distance = Math.sqrt(distX * distX + distY * distY);
+    const maxDist = 100;
+    
+    if (distance < maxDist && distance > 0) {
+      const force = (maxDist - distance) / distance;
+      dx.set(-distX * force * 0.8);
+      dy.set(-distY * force * 0.8);
+    } else {
+      dx.set(0);
+      dy.set(0);
+    }
+  }, [mouseX, mouseY, xOffset, yOffset]);
+
+  return (
+    <motion.span style={{ x: springX, y: springY, display: "inline-block" }}>
+      {char === " " ? "\u00A0" : char}
+    </motion.span>
+  );
+};
 
 const BalancedText = ({ text, font, maxWidth, lineHeight }) => {
+  const [mousePos, setMousePos] = useState({ x: null, y: null });
+  const containerRef = useRef(null);
+
   const { lines, width, height } = useMemo(() => {
     try {
       const prepared = prepareWithSegments(text, font);
@@ -18,13 +56,42 @@ const BalancedText = ({ text, font, maxWidth, lineHeight }) => {
     }
   }, [text, font, maxWidth, lineHeight]);
 
+  const handleMouseMove = (e) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handleMouseLeave = () => {
+    setMousePos({ x: null, y: null });
+  };
+
   return (
-    <div style={{ width, height, position: "relative" }}>
-      {lines.map((l, i) => (
-        <div key={i} style={{ position: "absolute", top: i * lineHeight, left: 0, whiteSpace: "pre" }}>
-          {l.text}
-        </div>
-      ))}
+    <div
+      ref={containerRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ width, height, position: "relative", cursor: "default" }}
+    >
+      {lines.map((l, i) => {
+        const chars = l.text.split("");
+        // Approximation of x offset for each char in a system font
+        const estimateCharWidth = l.width / Math.max(chars.length, 1);
+        return (
+          <div key={i} style={{ position: "absolute", top: i * lineHeight, left: 0, whiteSpace: "nowrap" }}>
+            {chars.map((c, j) => (
+              <RepellingChar
+                key={j}
+                char={c}
+                xOffset={j * estimateCharWidth + estimateCharWidth/2}
+                yOffset={i * lineHeight + lineHeight/2}
+                mouseX={mousePos.x}
+                mouseY={mousePos.y}
+              />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 };
