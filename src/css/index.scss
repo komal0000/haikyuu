@@ -1,0 +1,25 @@
+body {
+  background-image: url("./../assets/image/blur.jpg");
+  width: 100%;
+  height: 800px;
+  .container {
+    margin-top: 50px;
+    width: 100%;
+    height: 750px;
+    border-radius: 6px;
+    padding: 30px;
+    background-size: 100%;
+    background-image: url("./../assets/image/main.jpg");
+    position: relative;
+    .Footer {
+      position: absolute;
+      bottom: 4px;
+      display: flex;
+      font-weight: 600;
+      gap: 100px;
+      .star {
+        display: flex;
+      }
+    }
+  }
+}

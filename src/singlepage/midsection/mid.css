@@ -1,0 +1,27 @@
+.Mid {
+  margin-top: 200px;
+}
+.top {
+  color: #ff9d01;
+}
+h1 {
+  font-size: 45px;
+  color: white;
+}
+p {
+  color: white;
+  width: 550px;
+  font-size: 18px;
+}
+button {
+  background-color: #ff9d01;
+  border: none;
+  color: black;
+  padding: 8px 20px;
+  font-weight: bold;
+  border-radius: 6px;
+  font-size: 20px;
+}
+.bot {
+  margin-top: 170px;
+}
